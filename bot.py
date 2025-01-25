@@ -1,118 +1,129 @@
 import os
 import logging
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
-import json
 
-# Token del bot de Telegram
+# Configuración
 TOKEN = "7605197922:AAFDJP7bjPCUob939Iv6LAkRolt8f6Pmwbk"
-# ID y rango de la hoja de Google Sheets
 SPREADSHEET_ID = "1UWCawwwIilVsEWBQC7fFfwR7Tedbgu263fpxyWEOoiY"
 RANGE_NAME = "BD!A:J"
 
-# Configuración básica de logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# Función para cargar credenciales de Google
-async def load_credentials():
+def get_google_service():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     creds_dict = json.loads(creds_json)
     creds = Credentials.from_service_account_info(creds_dict)
-    return creds
-
-# Función para obtener datos de Google Sheets
-def get_sheet_data(creds):
     service = build("sheets", "v4", credentials=creds)
-    sheet = service.spreadsheets()
+    return service.spreadsheets()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_line(update, context)
+
+async def ask_line(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sheet = get_google_service()
+    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range="BD!A:A").execute()
+    lines = sorted(set(row[0] for row in result.get("values", [])[1:]))
+
+    keyboard = [[InlineKeyboardButton(line, callback_data=f"line|{line}")] for line in lines]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "¿Qué línea quieres consultar? (dejar en blanco para listar todas las líneas)",
+        reply_markup=reply_markup,
+    )
+
+async def ask_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    line = query.data.split("|")[1]
+    context.user_data["line"] = line
+
+    sheet = get_google_service()
+    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range="BD!B:B").execute()
+    services = sorted(set(row[0] for row in result.get("values", [])[1:] if row[0] == line))
+
+    keyboard = [[InlineKeyboardButton(service, callback_data=f"service|{service}")] for service in services]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        f"Línea elegida: {line}\n¿Cuál es el código del servicio a consultar?",
+        reply_markup=reply_markup,
+    )
+
+async def ask_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    service = query.data.split("|")[1]
+    context.user_data["service"] = service
+
+    keyboard = [
+        [InlineKeyboardButton("TD - Todos los días", callback_data="days|TD")],
+        [InlineKeyboardButton("SDF - Sábados", callback_data="days|SDF")],
+        [InlineKeyboardButton("LAB - Laborables", callback_data="days|LAB")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        f"Servicio elegido: {service}\nElige los días del servicio:",
+        reply_markup=reply_markup,
+    )
+
+async def ask_season(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    days = query.data.split("|")[1]
+    context.user_data["days"] = days
+
+    keyboard = [
+        [InlineKeyboardButton("IV - Todo el año", callback_data="season|IV")],
+        [InlineKeyboardButton("V - Verano", callback_data="season|V")],
+        [InlineKeyboardButton("I - Invierno", callback_data="season|I")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        f"Días elegidos: {days}\n¿Qué temporada quieres los horarios?",
+        reply_markup=reply_markup,
+    )
+
+async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    season = query.data.split("|")[1]
+    context.user_data["season"] = season
+
+    line = context.user_data["line"]
+    service = context.user_data["service"]
+    days = context.user_data["days"]
+
+    sheet = get_google_service()
     result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
-    return result.get("values", [])
+    values = result.get("values", [])
 
-# Comando /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        creds = await load_credentials()
-        data = get_sheet_data(creds)
+    # Filtrar por los datos seleccionados
+    filtered = [row for row in values if row[0] == line and row[1] == service and row[7] == days and row[8] == season]
 
-        # Obtener todas las líneas únicas
-        lines = sorted(set(row[0] for row in data if row))
+    if not filtered:
+        await query.edit_message_text("No se encontraron horarios para los parámetros seleccionados.")
+        return
 
-        # Crear botones interactivos para las líneas
-        buttons = [[InlineKeyboardButton(line, callback_data=f"line|{line}")] for line in lines]
-        reply_markup = InlineKeyboardMarkup(buttons)
+    response = f"Línea: {line}\nServicio: {service}\nDías: {days}\nTemporada: {season}\n-------------\n"
+    for row in filtered:
+        response += f"* {row[2]} - {row[5]}\n"
 
-        await update.message.reply_text(
-            "\u00a1Hola! Bienvenido al bot de horarios. Escribe la línea que deseas consultar o usa los menús interactivos.",
-            reply_markup=reply_markup
-        )
-    except Exception as e:
-        logging.error(f"Error en /start: {e}")
-        await update.message.reply_text("Ocurrió un error al iniciar el bot. Por favor, inténtalo más tarde.")
+    await query.edit_message_text(response)
 
-# Callback para manejar la selección de líneas
-async def handle_line_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        creds = await load_credentials()
-        data = get_sheet_data(creds)
-
-        # Obtener línea seleccionada
-        _, line = query.data.split("|")
-
-        # Filtrar servicios disponibles para la línea seleccionada
-        services = sorted(set(row[1] for row in data if row and row[0] == line))
-
-        # Crear botones interactivos para los servicios
-        buttons = [[InlineKeyboardButton(service, callback_data=f"service|{line}|{service}")] for service in services]
-        reply_markup = InlineKeyboardMarkup(buttons)
-
-        await query.edit_message_text(
-            f"Línea seleccionada: {line}. Selecciona el código de servicio:",
-            reply_markup=reply_markup
-        )
-    except Exception as e:
-        logging.error(f"Error en handle_line_selection: {e}")
-        await query.edit_message_text("Ocurrió un error al obtener los servicios disponibles.")
-
-# Callback para manejar la selección de servicios
-async def handle_service_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        creds = await load_credentials()
-        data = get_sheet_data(creds)
-
-        # Obtener línea y servicio seleccionados
-        _, line, service = query.data.split("|")
-
-        # Filtrar horarios para la línea y servicio seleccionados
-        schedule = [row for row in data if row and row[0] == line and row[1] == service]
-
-        if not schedule:
-            await query.edit_message_text("No se encontraron horarios para esta selección.")
-            return
-
-        # Formatear y mostrar los horarios
-        response = f"Línea: {line}\nServicio: {service}\n-------------\n"
-        for row in schedule:
-            response += f"* {row[2]} - {row[5]}\n"
-
-        await query.edit_message_text(response)
-    except Exception as e:
-        logging.error(f"Error en handle_service_selection: {e}")
-        await query.edit_message_text("Ocurrió un error al obtener los horarios.")
-
-# Configuración principal del bot
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_line_selection, pattern="^line|"))
-    app.add_handler(CallbackQueryHandler(handle_service_selection, pattern="^service|"))
+    app.add_handler(CallbackQueryHandler(ask_service, pattern="^line\\|"))
+    app.add_handler(CallbackQueryHandler(ask_days, pattern="^service\\|"))
+    app.add_handler(CallbackQueryHandler(ask_season, pattern="^days\\|"))
+    app.add_handler(CallbackQueryHandler(show_results, pattern="^season\\|"))
+
     app.run_polling()
