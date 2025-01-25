@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 import json
 
 TOKEN = "7605197922:AAFDJP7bjPCUob939Iv6LAkRolt8f6Pmwbk"
-SPREADSHEET_ID = "BD de horarios"  # Reemplaza con el ID de tu hoja de Google Sheets
+SPREADSHEET_ID = "1UWCawwwIilVsEWBQC7fFfwR7Tedbgu263fpxyWEOoiY"  # Reemplaza con el ID de tu hoja de Google Sheets
 RANGE_NAME = "BD!A:J"  # Ajusta el rango según tu hoja
 
 logging.basicConfig(
