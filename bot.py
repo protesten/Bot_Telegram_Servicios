@@ -1,14 +1,13 @@
 import os
 import logging
-import json
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
+import json
 
 # Token del bot de Telegram
 TOKEN = "7605197922:AAFDJP7bjPCUob939Iv6LAkRolt8f6Pmwbk"
-
 # ID y rango de la hoja de Google Sheets
 SPREADSHEET_ID = "1UWCawwwIilVsEWBQC7fFfwR7Tedbgu263fpxyWEOoiY"
 RANGE_NAME = "BD!A:J"
@@ -51,7 +50,7 @@ async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         values = result.get("values", [])
 
         if not values:
-            await update.message.reply_text("No se encontraron datos en el rango especificado.")
+            await update.message.reply_text("No se encontraron datos.")
             return
 
         response = "Datos obtenidos:\n"
@@ -59,27 +58,21 @@ async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             response += " - ".join(row) + "\n"
 
         await update.message.reply_text(response)
+    except ValueError as ve:
+        logging.error(f"Error en credenciales: {ve}")
+        await update.message.reply_text("Ocurrió un error con las credenciales.")
     except Exception as e:
-        error_message = f"Error al obtener datos: {e}"
-        logging.error(error_message)
-        await update.message.reply_text(error_message)
-
-# Comando para depurar las variables de entorno
-async def debug_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        google_credentials = os.environ.get("GOOGLE_CREDENTIALS")
-        if not google_credentials:
-            await update.message.reply_text("La variable GOOGLE_CREDENTIALS no está configurada.")
-            return
-        await update.message.reply_text("GOOGLE_CREDENTIALS detectada correctamente.")
-    except Exception as e:
-        await update.message.reply_text(f"Error al depurar variables de entorno: {e}")
+        logging.error(f"Error al obtener datos: {e}")
+        await update.message.reply_text("Ocurrió un error al obtener los datos.")
 
 # Configuración principal del bot
 if __name__ == "__main__":
+    # Eliminar el webhook antes de iniciar
+    bot = Bot(TOKEN)
+    bot.delete_webhook()
+
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test_credentials", test_credentials))
     app.add_handler(CommandHandler("datos", get_data))
-    app.add_handler(CommandHandler("debug_env", debug_env))
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling()
