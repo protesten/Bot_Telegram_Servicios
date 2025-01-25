@@ -20,19 +20,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
-        # Leer las credenciales desde la variable de entorno
+        # Verificar si las credenciales se cargan correctamente
         creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-        creds_dict = json.loads(creds_json)
+        if not creds_json:
+            raise ValueError("La variable GOOGLE_CREDENTIALS no está configurada.")
+        creds_dict = json.loads(creds_json)  # Asegúrate de que esto no dé error
         creds = Credentials.from_service_account_info(creds_dict)
+
         service = build("sheets", "v4", credentials=creds)
         sheet = service.spreadsheets()
 
         # Leer datos
-        result = (
-            sheet.values()
-            .get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME)
-            .execute()
-        )
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
         values = result.get("values", [])
 
         if not values:
@@ -46,9 +45,13 @@ async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await update.message.reply_text(response)
 
+    except ValueError as ve:
+        logging.error(f"Error en credenciales: {ve}")
+        await update.message.reply_text("Ocurrió un error con las credenciales.")
     except Exception as e:
         logging.error(f"Error al obtener datos: {e}")
         await update.message.reply_text("Ocurrió un error al obtener los datos.")
+
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
