@@ -65,7 +65,6 @@ async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 if __name__ == "__main__":
-    os.environ["GOOGLE_CREDENTIALS"] = os.getenv("GOOGLE_CREDENTIALS")  # Forzar lectura
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test_credentials", test_credentials))
