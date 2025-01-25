@@ -10,7 +10,7 @@ import json
 TOKEN = "7605197922:AAFDJP7bjPCUob939Iv6LAkRolt8f6Pmwbk"
 # ID y rango de la hoja de Google Sheets
 SPREADSHEET_ID = "1UWCawwwIilVsEWBQC7fFfwR7Tedbgu263fpxyWEOoiY"
-RANGE_NAME = "BD!A:J"
+RANGE_NAME = "A1:B10"
 
 # Configuración básica de logging
 logging.basicConfig(
