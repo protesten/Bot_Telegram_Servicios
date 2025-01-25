@@ -34,6 +34,36 @@ async def test_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         await update.message.reply_text(f"Error al cargar credenciales: {e}")
 
+
+async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict)
+
+        service = build("sheets", "v4", credentials=creds)
+        sheet = service.spreadsheets()
+
+        # Leer datos
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
+        values = result.get("values", [])
+
+        if not values:
+            await update.message.reply_text("No se encontraron datos en el rango especificado.")
+            return
+
+        # Formatear respuesta
+        response = "Datos obtenidos:\n"
+        for row in values[:5]:  # Limitar a las primeras 5 filas
+            response += " - ".join(row) + "\n"
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+        error_message = f"Error al obtener datos: {e}"
+        logging.error(error_message)
+        await update.message.reply_text(error_message)
+
 # Comando para obtener datos de la hoja de cálculo
 async def get_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
